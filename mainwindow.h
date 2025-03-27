@@ -2,47 +2,65 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QGraphicsLineItem>
+#include <QTcpSocket>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QMediaPlayer>
+#include <QAudioOutput>
 #include <QLabel>
 #include <QPropertyAnimation>
-#include "QGraphicsView"
-#include "qaudiooutput.h"
-#include <QTcpSocket>
+#include "boss.h"
 
-class MainWindow : public QMainWindow {
+class MovableImage;
+
+class MainWindow : public QMainWindow
+{
     Q_OBJECT
 
 public:
     MainWindow(const QString &ipAddress, QWidget *parent = nullptr);
     ~MainWindow();
-    void showResult(const QString &resultType);
-    void shakeContent();
-    void updateAmmoDisplay();
-    bool canShoot();
-    void fireEvent();
-    void writeMessage(const QString message);
+
+    // Public interface
+    void writeMessage(QString message);
+    void bossDefeated();
+    void playerHitByProjectile();
+    void spawnBoss();
+    void removeBoss();
+
+    // Public interface for MovableImage
+    void notifyHit();
+    bool canPlayerShoot() const;
 
 protected:
-    void mouseMoveEvent(QMouseEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+
+private slots:
+    void spawnImage();
+    void updateAmmoDisplay();
+    void showResult(const QString &resultType);
 
 private:
-    QMediaPlayer *player = new QMediaPlayer;
-    QAudioOutput *audioOutput = new QAudioOutput;
+    void fireEvent();
+    bool canShoot();
+    void shakeContent();
+    QTimer *stunTimer;
+    bool isStunned;
+
+    QTcpSocket *tcpSocket;
+    QString ipAddress;
     QGraphicsScene *scene;
     QGraphicsView *view;
     QTimer *spawnTimer;
-    QGraphicsLineItem *line;
-    QMediaPlayer *backgroundMusic;
-    QLabel *resultLabel;
-    QPropertyAnimation *shakeAnimation;
-    QLabel *ammoLabel;
-    int ammo = 50;
-    QTcpSocket *tcpSocket;
-    QString ipAddress;
-
-    void spawnImage();
+    QLabel *resultLabel = nullptr;
+    QLabel *ammoLabel = nullptr;
+    QPropertyAnimation *shakeAnimation = nullptr;
+    int ammo = 10;
+    bool _canShoot = true;
+    QMediaPlayer *player;
+    QAudioOutput *audioOutput;
+    Boss *boss = nullptr;
 };
 
-#endif
+#endif // MAINWINDOW_H

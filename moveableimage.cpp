@@ -31,7 +31,7 @@ void MovableImage::move() {
             player->play();
 
             if (mainWindow) {
-                mainWindow->shakeContent();
+                mainWindow->notifyHit();
             }
         }
 
@@ -42,7 +42,7 @@ void MovableImage::move() {
 
 void MovableImage::mousePressEvent(QGraphicsSceneMouseEvent *event) {
 
-    if (!mainWindow->canShoot()){
+    if(!mainWindow->canPlayerShoot()){
 
         player->setAudioOutput(audioOutput);
         player->setSource(QUrl("qrc:/new/prefix1/Empty.mp3"));
@@ -52,8 +52,7 @@ void MovableImage::mousePressEvent(QGraphicsSceneMouseEvent *event) {
         return;
     }
 
-    mainWindow->fireEvent();
-    if (moveTimer) {
+        if (moveTimer) {
         moveTimer->stop();
     }
 
@@ -71,7 +70,7 @@ void MovableImage::mousePressEvent(QGraphicsSceneMouseEvent *event) {
     } else if (type != BAD_SHIP && (type == "BlueShip" || type == "RedShip")) {
         type = "AHHH";
 
-        mainWindow->shakeContent();
+        mainWindow->notifyHit();
 
         player->setAudioOutput(audioOutput);
         player->setSource(QUrl("qrc:/new/prefix1/HitBad.mp3"));
@@ -98,16 +97,18 @@ void MovableImage::playAnimation() {
     if (currentFrame < frames.size()) {
         QPixmap framePixmap(frames[currentFrame]);
         if (!framePixmap.isNull()) {
-            framePixmap = framePixmap.scaled(pixmap().size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            framePixmap = framePixmap.scaled(pixmap().size(), Qt::KeepAspectRatio, Qt::SmoothTransformation); // Ensure the frame is scaled properly
             setPixmap(framePixmap);
 
+            // Center the animation image on the original position
             QPointF currentPosition = pos();
             QPointF centerOffset((pixmap().width() - framePixmap.width()) / 2, (pixmap().height() - framePixmap.height()) / 2);
             setPos(currentPosition + centerOffset);
         }
         currentFrame++;
-        QTimer::singleShot(100, this, &MovableImage::playAnimation);
+        QTimer::singleShot(100, this, &MovableImage::playAnimation); // Play next frame after 200 ms
     } else {
+        // Animation complete, remove the item
         scene()->removeItem(this);
         delete this;
     }
@@ -120,3 +121,8 @@ void MovableImage::playEmptied()
     audioOutput->setVolume(0.5);
     player->play();
 }
+
+
+
+
+

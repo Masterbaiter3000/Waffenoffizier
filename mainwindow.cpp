@@ -13,15 +13,27 @@
 #include <QTimer>
 #include <QPropertyAnimation>
 #include <QtMultimedia>
+#include "boss.h"
+#include <QGraphicsScene>
+#include <QDebug>
+#include <QPainter>
+#include <QFont>
+
+
 
 MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
-    : QMainWindow(parent), ipAddress(ipAddress) {
+    : QMainWindow(parent), ipAddress(ipAddress), boss(nullptr) {
+    // Initialize TCP socket
     tcpSocket = new QTcpSocket(this);
     connect(tcpSocket, &QTcpSocket::connected, this, [this]() {
         qDebug() << "Connected to server!";
         QString message = "#role:WeaponsOfficer\r\n";
         tcpSocket->write(message.toUtf8());
+
     });
+
+    stunTimer = new QTimer(this);
+    isStunned = false;
 
     connect(tcpSocket, &QTcpSocket::readyRead, this, [this]() {
         QByteArray receivedData = tcpSocket->readAll();
@@ -30,42 +42,42 @@ MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
         QString receivedMessage = QString::fromUtf8(receivedData);
         qDebug() << "Received message: " << receivedMessage;
 
-        if (receivedMessage == "PositiveLootbox"){
-
+        if (receivedMessage == "PositiveLootbox") {
             player->setAudioOutput(audioOutput);
             player->setSource(QUrl("qrc:/new/prefix1/GoodNotif.mp3"));
             audioOutput->setVolume(0.5);
             player->play();
-
             showResult(receivedMessage);
-        }else if(receivedMessage == "NegativeLootbox"){
-
+        } else if(receivedMessage == "NegativeLootbox") {
             player->setAudioOutput(audioOutput);
             player->setSource(QUrl("qrc:/new/prefix1/BadNotif.mp3"));
             audioOutput->setVolume(0.5);
             player->play();
-
             showResult(receivedMessage);
-
-        }else if(receivedMessage.contains("#ammo:")){
+        } else if(receivedMessage.contains("#ammo:")) {
             int ammoIndex = receivedMessage.indexOf("#ammo:");
             QString ammoValue = receivedMessage.mid(ammoIndex + 6).trimmed();
             qDebug() << ammoValue;
-            updateAmmoDisplay();
             ammo = ammoValue.toInt();
+            updateAmmoDisplay();
+        }   if(receivedMessage == "SpawnBoss") {
+            spawnBoss();
+        } else if(receivedMessage == "RemoveBoss") {
+            removeBoss();
         }
     });
-
 
     connect(tcpSocket, &QTcpSocket::errorOccurred, this, [](QAbstractSocket::SocketError socketError) {
         qDebug() << "Error:" << socketError;
     });
 
     tcpSocket->connectToHost(ipAddress, 9999);
-    setWindowFlags(Qt::FramelessWindowHint);
 
+    // Window setup
+    setWindowFlags(Qt::FramelessWindowHint);
     view = new QGraphicsView(this);
 
+    // Scene setup
     QRect screenGeometry = QApplication::screens().at(0)->geometry();
     int screenWidth = screenGeometry.width();
     int screenHeight = screenGeometry.height();
@@ -76,9 +88,9 @@ MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
 
     view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-
     showMaximized();
 
+    // Background setup
     QPixmap backgroundPixmap(":/new/prefix1/Background.png");
     if (!backgroundPixmap.isNull()) {
         QGraphicsPixmapItem *background = new QGraphicsPixmapItem(backgroundPixmap.scaled(screenWidth, screenHeight, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
@@ -86,6 +98,7 @@ MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
         background->setZValue(-2);
     }
 
+    // Layer setup
     QPixmap layerPixmap(":/new/prefix1/layer.png");
     if (!layerPixmap.isNull()) {
         QGraphicsPixmapItem *layer = new QGraphicsPixmapItem(layerPixmap.scaled(screenWidth, screenHeight, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
@@ -93,6 +106,7 @@ MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
         layer->setZValue(1);
     }
 
+    // Cursor setup
     QPixmap cursorPixmap(":/new/prefix1/cursor.png");
     if (!cursorPixmap.isNull()) {
         int cursorSize = screenWidth / 15;
@@ -101,15 +115,21 @@ MainWindow::MainWindow(const QString &ipAddress, QWidget *parent)
         setCursor(customCursor);
     }
 
+    // Spawn timer setup
     spawnTimer = new QTimer(this);
     connect(spawnTimer, &QTimer::timeout, this, &MainWindow::spawnImage);
     spawnTimer->start(1000);
 
+    // Ammo display setup
     ammoLabel = new QLabel(this);
     ammoLabel->setStyleSheet("QLabel { color : white; font-size: 60px; font-weight: 1000}");
     updateAmmoDisplay();
-    ammoLabel->setGeometry(screenWidth - 450, screenHeight - 250, 400, 230); // Position in the bottom-right corner
+    ammoLabel->setGeometry(screenWidth - 450, screenHeight - 250, 400, 230);
     ammoLabel->show();
+
+    // Media player setup
+    player = new QMediaPlayer(this);
+    audioOutput = new QAudioOutput(this);
 }
 
 MainWindow::~MainWindow() {
@@ -118,6 +138,59 @@ MainWindow::~MainWindow() {
     delete resultLabel;
     delete shakeAnimation;
     delete ammoLabel;
+    if (boss) {
+        delete boss;
+    }
+}
+
+void MainWindow::spawnBoss() {
+    if (!boss) {
+        boss = new Boss(this, scene);
+        scene->addItem(boss);
+        boss->startShooting();
+    }
+}
+
+void MainWindow::removeBoss() {
+    if (boss) {
+        boss->stopShooting();
+        scene->removeItem(boss);
+        delete boss;
+        boss = nullptr;
+    }
+}
+
+void MainWindow::bossDefeated() {
+    qDebug() << "Boss defeated!";
+    removeBoss();
+}
+
+void MainWindow::playerHitByProjectile() {
+    if (isStunned) return;
+
+    isStunned = true;
+    ammoLabel->setStyleSheet("QLabel { color : Red; font-size: 60px; font-weight: 1000}");
+
+    // Play stun sound effect
+    player->setAudioOutput(audioOutput);
+    player->setSource(QUrl("qrc:/new/prefix1/StunEffect.mp3")); // Add this sound file
+    audioOutput->setVolume(0.7);
+    player->play();
+
+    // Show stun effect on screen
+    QLabel *stunLabel = new QLabel("WEAPONS STUNNED!", this);
+    stunLabel->setStyleSheet("QLabel { color : red; font-size: 80px; font-weight: bold; }");
+    stunLabel->setAlignment(Qt::AlignCenter);
+    stunLabel->setGeometry(0, scene->height()/2 - 50, scene->width(), 100);
+    stunLabel->show();
+
+    // Remove stun after 3 seconds
+    QTimer::singleShot(3000, [this, stunLabel]() {
+        isStunned = false;
+        ammoLabel->setStyleSheet("QLabel { color : White; font-size: 60px; font-weight: 1000}");
+        stunLabel->hide();
+        delete stunLabel;
+    });
 }
 
 void MainWindow::updateAmmoDisplay() {
@@ -125,7 +198,7 @@ void MainWindow::updateAmmoDisplay() {
 
     if (ammo == 0) {
         ammoLabel->setStyleSheet("QLabel { color : Red; font-size: 60px; font-weight: 1000}");
-    }else{
+    } else {
         ammoLabel->setStyleSheet("QLabel { color : White; font-size: 60px; font-weight: 1000}");
     }
 }
@@ -135,13 +208,12 @@ bool MainWindow::canShoot() {
 }
 
 void MainWindow::fireEvent() {
-
     if (ammo == 0) {
         player->setAudioOutput(audioOutput);
         player->setSource(QUrl("qrc:/new/prefix1/Empty.mp3"));
         audioOutput->setVolume(0.5);
         player->play();
-    }else{
+    } else {
         writeMessage(QString("#shoot:none"));
     }
 
@@ -172,7 +244,6 @@ void MainWindow::shakeContent() {
     }
 
     QPoint originalPos = view->pos();
-
     shakeAnimation->setKeyValueAt(0, originalPos);
     shakeAnimation->setKeyValueAt(0.1, originalPos + QPoint(-10, 0));
     shakeAnimation->setKeyValueAt(0.2, originalPos + QPoint(10, 0));
@@ -200,12 +271,11 @@ void MainWindow::spawnImage() {
     QPixmap pixmap;
     QString type;
 
-    if(randomNumber < 70){
+    if(randomNumber < 70) {
         pixmap = QPixmap(":/new/prefix1/meteor.png");
         type = "meteor";
-    }else{
+    } else {
         randomNumber = QRandomGenerator::global()->bounded(1, 101);
-
 
         if (randomNumber < 65) {
             randomNumber = QRandomGenerator::global()->bounded(1, 101);
@@ -213,11 +283,11 @@ void MainWindow::spawnImage() {
             if (randomNumber < 50) {
                 pixmap = QPixmap(":/new/prefix1/Raumschiff1.png");
                 type = "BlueShip";
-            }else{
+            } else {
                 pixmap = QPixmap(":/new/prefix1/Raumschiff2.png");
                 type = "RedShip";
             }
-        }else{
+        } else {
             pixmap = QPixmap(":/new/prefix1/Lootbox.png");
             type = "Lootbox";
         }
@@ -260,7 +330,6 @@ void MainWindow::showResult(const QString &resultType) {
     }
 
     resultLabel = new QLabel(this);
-
     resultPixmap = resultPixmap.scaled(200, 100, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
     QImage imageWithText(resultPixmap.size(), QImage::Format_ARGB32);
     imageWithText.fill(Qt::transparent);
@@ -276,18 +345,11 @@ void MainWindow::showResult(const QString &resultType) {
     resultLabel->setAlignment(Qt::AlignCenter);
 
     QRect screenGeometry = QApplication::screens().at(0)->geometry();
-    resultLabel->setGeometry(
-        20,
-        screenGeometry.height() - 120,
-        200,
-        100
-        );
-
+    resultLabel->setGeometry(20, screenGeometry.height() - 120, 200, 100);
     resultLabel->setCursor(Qt::ArrowCursor);
-
     resultLabel->setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    resultLabel->setAttribute(Qt::WA_ShowWithoutActivating, false); // Prevent clicks from passing through
-    resultLabel->setStyleSheet("background: rgba(0, 0, 0, 0.7); border: 2px solid white;"); // Optional style for visibility
+    resultLabel->setAttribute(Qt::WA_ShowWithoutActivating, false);
+    resultLabel->setStyleSheet("background: rgba(0, 0, 0, 0.7); border: 2px solid white;");
     resultLabel->show();
 
     QTimer::singleShot(2000, [this]() {
@@ -301,4 +363,12 @@ void MainWindow::showResult(const QString &resultType) {
     if (resultType == "Negative") {
         shakeContent();
     }
+}
+void MainWindow::notifyHit() {
+    fireEvent();
+    shakeContent();
+}
+
+bool MainWindow::canPlayerShoot() const {
+    return canPlayerShoot();
 }

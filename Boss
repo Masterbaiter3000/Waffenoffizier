@@ -1,0 +1,10 @@
+#ifndef BOSS
+#define BOSS
+
+class Boss
+{
+public:
+    Boss();
+};
+
+#endif // BOSS

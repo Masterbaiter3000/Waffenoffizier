@@ -21,7 +21,6 @@
         <file>Shoot.mp3</file>
         <file>AmmoEmptied.mp3</file>
         <file>Empty.mp3</file>
-        <file>Stars.png</file>
     </qresource>
     <qresource prefix="/">
         <file>File.qml</file>
